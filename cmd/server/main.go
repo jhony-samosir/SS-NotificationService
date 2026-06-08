@@ -48,13 +48,13 @@ func main() {
 	}
 
 	if db != nil {
-		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{})
+		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{}, &domain.UserDeviceModel{})
 	}
 
 	// 2. Initialize Infrastructure Providers
 	emailProv := provider.NewSendGridProvider(log, "dummy-api-key")
 	smsProv := provider.NewTwilioProvider(log, "dummy-sms-key")
-	pushProv := provider.NewFCMProvider(log, "dummy-fcm-key")
+	pushProv := provider.NewFCMProvider(log, "dummy-fcm-key", db)
 
 	// 3. Initialize Usecase
 	notifUsecase := usecase.NewNotificationUsecase(emailProv, smsProv, pushProv, log)
@@ -66,11 +66,14 @@ func main() {
 	outboxWorker := messaging.NewOutboxWorker(rabbitMQUrl, db)
 
 	// 5. Start HTTP Server for API Gateway integration
+	apiUsecase := usecase.NewNotificationAPIUsecase(db)
+	apiHandler := http.NewNotificationHandler(apiUsecase)
+
 	hmacSecret := os.Getenv("GATEWAY_HMAC_SECRET")
 	if hmacSecret == "" {
 		hmacSecret = "default-secret"
 	}
-	router := http.NewRouter(hmacSecret)
+	router := http.NewRouter(hmacSecret, apiHandler)
 	httpServer := &stdhttp.Server{
 		Addr:    ":8080",
 		Handler: router,
