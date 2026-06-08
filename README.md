@@ -26,9 +26,11 @@ The database schema is minimal but critical for ensuring data integrity and idem
 ```mermaid
 erDiagram
     inbox_events {
-        UUID message_id PK
-        VARCHAR type "e.g., order.created"
+        VARCHAR message_id PK
+        VARCHAR event_type
+        JSONB payload
         TIMESTAMP processed_at
+        VARCHAR status
     }
 
     notification_history {
@@ -39,6 +41,15 @@ erDiagram
         VARCHAR recipient "email or phone number"
         VARCHAR status "SENT, FAILED, BOUNCED"
         TEXT error_message "nullable"
+        TIMESTAMP created_at
+    }
+
+    outbox_events {
+        UUID id PK
+        VARCHAR event_type
+        JSONB payload
+        VARCHAR status "pending, published, failed"
+        INT retry_count
         TIMESTAMP created_at
     }
 ```
