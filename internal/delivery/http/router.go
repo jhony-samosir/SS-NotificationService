@@ -5,9 +5,10 @@ import (
 	"net/http"
 
 	"github.com/jhony-samosir/SS-NotificationService/internal/delivery/http/middleware"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
-func NewRouter(hmacSecret string, handler *NotificationHandler) *http.ServeMux {
+func NewRouter(hmacSecret string, handler *NotificationHandler) http.Handler {
 	mux := http.NewServeMux()
 
 	// Setup protected routes
@@ -23,5 +24,6 @@ func NewRouter(hmacSecret string, handler *NotificationHandler) *http.ServeMux {
 	// Wrap protected routes with HMAC middleware
 	mux.Handle("/api/notifications/", middleware.HMACValidator(hmacSecret)(protected))
 
-	return mux
+	// Wrap entire mux with OpenTelemetry HTTP middleware
+	return otelhttp.NewHandler(mux, "NotificationService")
 }

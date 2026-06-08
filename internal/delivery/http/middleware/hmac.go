@@ -13,7 +13,7 @@ import (
 func HMACValidator(secret string) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			signature := r.Header.Get("X-Gateway-Signature")
+			signature := r.Header.Get("X-Internal-Signature")
 			if signature == "" {
 				http.Error(w, "Unauthorized: Missing Signature", http.StatusUnauthorized)
 				return

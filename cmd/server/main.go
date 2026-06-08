@@ -9,6 +9,7 @@ import (
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/plugin/opentelemetry/tracing"
 
 	"github.com/jhony-samosir/SS-NotificationService/internal/delivery/http"
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
@@ -39,8 +40,11 @@ func main() {
 		defer tp.Shutdown(context.Background())
 	}
 
-	// 1. Initialize Database (Dummy connection string for bootstrap)
-	dsn := "host=localhost user=postgres password=postgres dbname=ss_notification_db port=5432 sslmode=disable"
+	// 1. Initialize Database
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		dsn = "host=localhost user=postgres password=postgres dbname=ss_notification_db port=5432 sslmode=disable"
+	}
 	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
 		log.Error("Failed to connect to database", "error", err)
@@ -48,6 +52,9 @@ func main() {
 	}
 
 	if db != nil {
+		if err := db.Use(tracing.NewPlugin()); err != nil {
+			log.Error("Failed to register gorm tracing plugin", "error", err)
+		}
 		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{}, &domain.UserDeviceModel{})
 	}
 
@@ -60,7 +67,10 @@ func main() {
 	notifUsecase := usecase.NewNotificationUsecase(emailProv, smsProv, pushProv, log)
 
 	// 4. Initialize Messaging (RabbitMQ)
-	rabbitMQUrl := "amqp://guest:guest@localhost:5672/"
+	rabbitMQUrl := os.Getenv("RABBITMQ_URL")
+	if rabbitMQUrl == "" {
+		rabbitMQUrl = "amqp://guest:guest@localhost:5672/"
+	}
 	
 	inboxConsumer := messaging.NewInboxConsumer(rabbitMQUrl, db, notifUsecase)
 	outboxWorker := messaging.NewOutboxWorker(rabbitMQUrl, db)
