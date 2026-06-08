@@ -1,53 +1,44 @@
 package usecase
 
 import (
-	"context"
+	"encoding/json"
 	"errors"
 	"log/slog"
 	"time"
 
+	"gorm.io/gorm"
+
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
+	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/messaging"
 )
 
 type NotificationUsecase struct {
-	inboxRepo    domain.InboxRepository
-	notifRepo    domain.NotificationRepository
 	emailProvider domain.NotificationProvider
-	logger       *slog.Logger
+	logger        *slog.Logger
 }
 
 func NewNotificationUsecase(
-	inboxRepo domain.InboxRepository,
-	notifRepo domain.NotificationRepository,
 	emailProvider domain.NotificationProvider,
 	logger *slog.Logger,
 ) *NotificationUsecase {
 	return &NotificationUsecase{
-		inboxRepo:    inboxRepo,
-		notifRepo:    notifRepo,
 		emailProvider: emailProvider,
-		logger:       logger,
+		logger:        logger,
 	}
 }
 
-func (u *NotificationUsecase) ProcessOrderCreatedEvent(ctx context.Context, messageID string, payload map[string]interface{}) error {
-	// 1. Idempotency Check
-	exists, err := u.inboxRepo.Exists(messageID)
-	if err != nil {
-		return err
-	}
-	if exists {
-		u.logger.Info("Message already processed, skipping", slog.String("message_id", messageID))
-		return nil
-	}
-
-	// 2. Process Notification
+// ProcessEventWithTx runs the notification logic within the consumer's DB transaction
+func (u *NotificationUsecase) ProcessEventWithTx(tx *gorm.DB, messageID string, eventType string, payload map[string]interface{}) error {
+	// Extract recipient based on event type
+	// This is a simplified logic. In a real app, you'd have strategies per event type.
 	recipient, ok := payload["user_email"].(string)
 	if !ok {
+		u.logger.Warn("Payload missing user_email, skipping send", slog.String("message_id", messageID))
 		return errors.New("invalid payload: missing user_email")
 	}
 
-	err = u.emailProvider.Send(recipient, "order_created", payload)
+	// Process Provider
+	err := u.emailProvider.Send(recipient, eventType, payload)
 	
 	status := domain.StatusSent
 	var errMsg *string
@@ -55,13 +46,13 @@ func (u *NotificationUsecase) ProcessOrderCreatedEvent(ctx context.Context, mess
 		status = domain.StatusFailed
 		e := err.Error()
 		errMsg = &e
-		u.logger.Error("Failed to send email", slog.String("error", e))
+		u.logger.Error("Failed to send notification via provider", slog.String("error", e))
 	}
 
-	// 3. Save History
+	// 1. Save to Notification History
 	notif := &domain.Notification{
-		ID:               "gen-uuid", // In a real app, generate UUID
-		UserID:           "user-uuid", // Extract from payload
+		ID:               "gen-uuid", // Use UUID generator
+		UserID:           "user-uuid",
 		NotificationType: domain.TypeEmail,
 		Provider:         domain.ProviderSendGrid,
 		Recipient:        recipient,
@@ -69,19 +60,24 @@ func (u *NotificationUsecase) ProcessOrderCreatedEvent(ctx context.Context, mess
 		ErrorMessage:     errMsg,
 		CreatedAt:        time.Now(),
 	}
-	_ = u.notifRepo.Save(notif)
 
-	// 4. Save Inbox Event to mark as processed
-	if err == nil {
-		err = u.inboxRepo.Save(&domain.InboxEvent{
-			MessageID:   messageID,
-			Type:        "order.created",
-			ProcessedAt: time.Now(),
-		})
-		if err != nil {
-			return err
-		}
+	// For simplicity, we create history directly via tx instead of repo interface
+	// In strict Clean Arch, you'd pass a repo that wraps tx.
+	if err := tx.Table("notification_history").Create(notif).Error; err != nil {
+		return err
 	}
 
-	return err
+	// 2. Publish to Outbox (notification.sent or notification.failed)
+	outboxPayload, _ := json.Marshal(notif)
+	outboxEvent := &messaging.OutboxEventModel{
+		EventType: "notification." + string(status),
+		Payload:   outboxPayload,
+		Status:    "pending",
+	}
+
+	if err := tx.Create(outboxEvent).Error; err != nil {
+		return err
+	}
+
+	return nil
 }

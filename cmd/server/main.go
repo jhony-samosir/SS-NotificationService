@@ -2,42 +2,51 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"os"
 
-	"github.com/jhony-samosir/SS-NotificationService/internal/delivery/rabbitmq"
-	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
-	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/postgres"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/messaging"
 	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/provider"
 	"github.com/jhony-samosir/SS-NotificationService/internal/usecase"
 )
-
-// Dummy Notification Repo to satisfy interface
-type dummyNotifRepo struct{}
-
-func (d *dummyNotifRepo) Save(notification *domain.Notification) error {
-	return nil
-}
 
 func main() {
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, nil))
 	logger.Info("Starting SS-NotificationService")
 
-	// Dummy DB
-	var db *sql.DB
+	// 1. Initialize Database (Dummy connection string for bootstrap)
+	dsn := "host=localhost user=postgres password=postgres dbname=ss_notification_db port=5432 sslmode=disable"
+	db, err := gorm.Open(postgres.Open(dsn), &gorm.Config{})
+	if err != nil {
+		logger.Error("Failed to connect to database", "error", err)
+		// For now we don't panic so it compiles and runs dummy
+	}
 
-	// Infrastructure
-	inboxRepo := postgres.NewInboxRepository(db)
-	notifRepo := &dummyNotifRepo{}
+	if db != nil {
+		// AutoMigrate models
+		db.AutoMigrate(&messaging.InboxEventModel{}, &messaging.OutboxEventModel{})
+	}
+
+	// 2. Initialize Infrastructure Providers
 	emailProv := provider.NewSendGridProvider(logger, "dummy-api-key")
 
-	// Usecase
-	notifUsecase := usecase.NewNotificationUsecase(inboxRepo, notifRepo, emailProv, logger)
+	// 3. Initialize Usecase
+	notifUsecase := usecase.NewNotificationUsecase(emailProv, logger)
 
-	// Delivery
-	consumer := rabbitmq.NewConsumer(notifUsecase, logger)
-	consumer.Start(context.Background())
+	// 4. Initialize Messaging (RabbitMQ)
+	rabbitMQUrl := "amqp://guest:guest@localhost:5672/"
+	
+	inboxConsumer := messaging.NewInboxConsumer(rabbitMQUrl, db, notifUsecase)
+	outboxWorker := messaging.NewOutboxWorker(rabbitMQUrl, db)
+
+	// 5. Start Workers
+	ctx := context.Background()
+	
+	go inboxConsumer.Start(ctx)
+	go outboxWorker.Start(ctx)
 
 	// Block forever
 	select {}
