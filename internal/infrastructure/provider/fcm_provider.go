@@ -2,8 +2,6 @@ package provider
 
 import (
 	"log/slog"
-
-	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 )
 
 type FCMProvider struct {

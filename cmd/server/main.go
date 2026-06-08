@@ -10,7 +10,6 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 	"github.com/jhony-samosir/SS-NotificationService/internal/delivery/http"
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/messaging"
