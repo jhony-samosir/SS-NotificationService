@@ -1,11 +1,13 @@
 package usecase
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"time"
 
+	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
 
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
@@ -13,39 +15,81 @@ import (
 
 type NotificationUsecase struct {
 	emailProvider domain.NotificationProvider
+	smsProvider   domain.NotificationProvider
+	pushProvider  domain.NotificationProvider
 	logger        *slog.Logger
 }
 
 func NewNotificationUsecase(
 	emailProvider domain.NotificationProvider,
+	smsProvider domain.NotificationProvider,
+	pushProvider domain.NotificationProvider,
 	logger *slog.Logger,
 ) *NotificationUsecase {
 	return &NotificationUsecase{
 		emailProvider: emailProvider,
+		smsProvider:   smsProvider,
+		pushProvider:  pushProvider,
 		logger:        logger,
 	}
 }
 
 // ProcessEventWithTx runs the notification logic within the consumer's DB transaction
-func (u *NotificationUsecase) ProcessEventWithTx(tx *gorm.DB, messageID string, eventType string, payload map[string]interface{}) error {
-	// Extract recipient based on event type
-	// This is a simplified logic. In a real app, you'd have strategies per event type.
-	recipient, ok := payload["user_email"].(string)
-	if !ok {
-		u.logger.Warn("Payload missing user_email, skipping send", slog.String("message_id", messageID))
-		return errors.New("invalid payload: missing user_email")
+func (u *NotificationUsecase) ProcessEventWithTx(ctx context.Context, tx *gorm.DB, messageID string, eventType string, payload map[string]interface{}) error {
+	tracer := otel.Tracer("notification-usecase")
+	ctx, span := tracer.Start(ctx, "process_event")
+	defer span.End()
+
+	// Check for channels
+	email, hasEmail := payload["user_email"].(string)
+	phone, hasPhone := payload["user_phone"].(string)
+
+	if !hasEmail && !hasPhone {
+		u.logger.WarnContext(ctx, "Payload missing recipient details", slog.String("message_id", messageID))
+		return errors.New("invalid payload: missing recipient")
 	}
 
-	// Process Provider
-	err := u.emailProvider.Send(recipient, eventType, payload)
-	
 	status := domain.StatusSent
 	var errMsg *string
-	if err != nil {
+	var lastErr error
+
+	// Retry wrapper
+	sendWithRetry := func(provider domain.NotificationProvider, recipient string) error {
+		var err error
+		maxRetries := 3
+		backoff := 1 * time.Second
+
+		for i := 0; i <= maxRetries; i++ {
+			err = provider.Send(recipient, eventType, payload)
+			if err == nil {
+				return nil
+			}
+			if i < maxRetries {
+				u.logger.WarnContext(ctx, "Provider send failed, retrying", slog.Int("attempt", i+1), slog.Duration("backoff", backoff))
+				time.Sleep(backoff)
+				backoff *= 2
+			}
+		}
+		return err
+	}
+
+	if hasEmail {
+		if err := sendWithRetry(u.emailProvider, email); err != nil {
+			lastErr = err
+		}
+	}
+
+	if hasPhone {
+		if err := sendWithRetry(u.smsProvider, phone); err != nil {
+			lastErr = err
+		}
+	}
+
+	if lastErr != nil {
 		status = domain.StatusFailed
-		e := err.Error()
+		e := lastErr.Error()
 		errMsg = &e
-		u.logger.Error("Failed to send notification via provider", slog.String("error", e))
+		u.logger.ErrorContext(ctx, "Failed to send notification after retries", slog.String("error", e))
 	}
 
 	// 1. Save to Notification History
@@ -54,7 +98,7 @@ func (u *NotificationUsecase) ProcessEventWithTx(tx *gorm.DB, messageID string, 
 		UserID:           "user-uuid",
 		NotificationType: domain.TypeEmail,
 		Provider:         domain.ProviderSendGrid,
-		Recipient:        recipient,
+		Recipient:        "multiple",
 		Status:           status,
 		ErrorMessage:     errMsg,
 		CreatedAt:        time.Now(),

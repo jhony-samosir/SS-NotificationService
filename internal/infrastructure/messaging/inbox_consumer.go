@@ -7,6 +7,8 @@ import (
 	"time"
 
 	amqp "github.com/rabbitmq/amqp091-go"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
@@ -68,7 +70,28 @@ func (c *InboxConsumer) consume(ctx context.Context) error {
 		return err
 	}
 
-	q, err := ch.QueueDeclare(c.queue, true, false, false, false, nil)
+	// Declare DLX Exchange
+	err = ch.ExchangeDeclare("samstore.events.dlx", "direct", true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+
+	// Declare DLQ
+	_, err = ch.QueueDeclare(c.queue+".dlq", true, false, false, false, nil)
+	if err != nil {
+		return err
+	}
+	err = ch.QueueBind(c.queue+".dlq", "notification.dlq", "samstore.events.dlx", false, nil)
+	if err != nil {
+		return err
+	}
+
+	args := amqp.Table{
+		"x-dead-letter-exchange":    "samstore.events.dlx",
+		"x-dead-letter-routing-key": "notification.dlq",
+	}
+
+	q, err := ch.QueueDeclare(c.queue, true, false, false, false, args)
 	if err != nil {
 		return err
 	}
@@ -104,6 +127,21 @@ func (c *InboxConsumer) consume(ctx context.Context) error {
 }
 
 func (c *InboxConsumer) processMessage(ctx context.Context, msg amqp.Delivery) {
+	// Extract Trace Context from headers
+	tracer := otel.Tracer("notification-consumer")
+	
+	propagator := otel.GetTextMapPropagator()
+	headerMap := make(map[string]string)
+	for k, v := range msg.Headers {
+		if strVal, ok := v.(string); ok {
+			headerMap[k] = strVal
+		}
+	}
+	ctx = propagator.Extract(ctx, propagation.MapCarrier(headerMap))
+	
+	ctx, span := tracer.Start(ctx, "process_message")
+	defer span.End()
+
 	messageID := msg.MessageId
 	if messageID == "" {
 		slog.Warn("Received message without MessageId", "routing_key", msg.RoutingKey)
@@ -112,7 +150,7 @@ func (c *InboxConsumer) processMessage(ctx context.Context, msg amqp.Delivery) {
 	}
 
 	eventType := msg.RoutingKey
-	slog.Info("Processing incoming event", "message_id", messageID, "routing_key", eventType)
+	slog.InfoContext(ctx, "Processing incoming event", "message_id", messageID, "routing_key", eventType)
 
 	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Idempotency check with ON CONFLICT DO NOTHING
@@ -141,11 +179,11 @@ func (c *InboxConsumer) processMessage(ctx context.Context, msg amqp.Delivery) {
 
 		// Pass the transaction to the usecase so it can insert to notification_history
 		// and outbox_events in the same transaction
-		return c.usecase.ProcessEventWithTx(tx, messageID, eventType, payload)
+		return c.usecase.ProcessEventWithTx(ctx, tx, messageID, eventType, payload)
 	})
 
 	if err != nil {
-		slog.Error("Failed to process message", "message_id", messageID, "error", err)
+		slog.ErrorContext(ctx, "Failed to process message", "message_id", messageID, "error", err)
 		msg.Nack(false, true)
 	} else {
 		msg.Ack(false)
