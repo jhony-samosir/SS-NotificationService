@@ -46,5 +46,11 @@ func (u *NotificationAPIUsecase) GetHistory(ctx context.Context, userID string, 
 func (u *NotificationAPIUsecase) MarkAsRead(ctx context.Context, userID, notificationID string) error {
 	return u.db.WithContext(ctx).Table("notification_history").
 		Where("id = ? AND user_id = ?", notificationID, userID).
-		Update("status", "READ").Error
+		Update("is_read", true).Error
+}
+
+func (u *NotificationAPIUsecase) MarkAllAsRead(ctx context.Context, userID string) error {
+	return u.db.WithContext(ctx).Table("notification_history").
+		Where("user_id = ? AND is_read = ?", userID, false).
+		Update("is_read", true).Error
 }

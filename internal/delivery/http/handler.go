@@ -112,3 +112,24 @@ func (h *NotificationHandler) MarkAsRead(w http.ResponseWriter, r *http.Request)
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(map[string]string{"message": "Marked as read"})
 }
+
+func (h *NotificationHandler) MarkAllAsRead(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPatch {
+		http.Error(w, "Method Not Allowed", http.StatusMethodNotAllowed)
+		return
+	}
+
+	userID := r.Header.Get("X-User-Id")
+	if userID == "" {
+		http.Error(w, "Unauthorized: Missing X-User-Id", http.StatusUnauthorized)
+		return
+	}
+
+	if err := h.apiUsecase.MarkAllAsRead(r.Context(), userID); err != nil {
+		http.Error(w, "Internal Server Error", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]string{"message": "All marked as read"})
+}

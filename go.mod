@@ -3,6 +3,7 @@ module github.com/jhony-samosir/SS-NotificationService
 go 1.26.2
 
 require (
+	github.com/google/uuid v1.6.0
 	github.com/rabbitmq/amqp091-go v1.11.0
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.69.0
 	go.opentelemetry.io/otel v1.44.0
@@ -26,7 +27,6 @@ require (
 	github.com/go-logr/logr v1.4.3 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-sql-driver/mysql v1.7.0 // indirect
-	github.com/google/uuid v1.6.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.29.0 // indirect
 	github.com/hashicorp/go-version v1.6.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

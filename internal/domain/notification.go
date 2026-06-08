@@ -23,14 +23,21 @@ const (
 )
 
 type Notification struct {
-	ID               string
-	UserID           string
-	NotificationType NotificationType
-	Provider         ProviderType
-	Recipient        string
-	Status           NotificationStatus
-	ErrorMessage     *string
-	CreatedAt        time.Time
+	ID               string             `gorm:"primaryKey;type:uuid" json:"id"`
+	UserID           string             `gorm:"index;type:uuid" json:"userId"`
+	NotificationType NotificationType   `json:"notificationType"`
+	Provider         ProviderType       `json:"provider"`
+	Recipient        string             `json:"recipient"`
+	Title            string             `json:"title"`
+	Body             string             `json:"body"`
+	IsRead           bool               `gorm:"default:false" json:"isRead"`
+	Status           NotificationStatus `json:"status"`
+	ErrorMessage     *string            `json:"errorMessage,omitempty"`
+	CreatedAt        time.Time          `json:"createdAt"`
+}
+
+func (Notification) TableName() string {
+	return "notification_history"
 }
 
 type NotificationRepository interface {

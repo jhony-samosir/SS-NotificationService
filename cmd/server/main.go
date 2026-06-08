@@ -55,7 +55,7 @@ func main() {
 		if err := db.Use(tracing.NewPlugin()); err != nil {
 			log.Error("Failed to register gorm tracing plugin", "error", err)
 		}
-		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{}, &domain.UserDeviceModel{})
+		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{}, &domain.UserDeviceModel{}, &domain.Notification{})
 	}
 
 	// 2. Initialize Infrastructure Providers

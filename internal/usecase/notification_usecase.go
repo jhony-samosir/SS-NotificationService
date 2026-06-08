@@ -9,6 +9,7 @@ import (
 
 	"go.opentelemetry.io/otel"
 	"gorm.io/gorm"
+	"github.com/google/uuid"
 
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 )
@@ -92,10 +93,24 @@ func (u *NotificationUsecase) ProcessEventWithTx(ctx context.Context, tx *gorm.D
 		u.logger.ErrorContext(ctx, "Failed to send notification after retries", slog.String("error", e))
 	}
 
+	userID, _ := payload["user_id"].(string)
+	title, _ := payload["title"].(string)
+	body, _ := payload["body"].(string)
+
+	if userID == "" {
+		userID = "system"
+	}
+	if title == "" {
+		title = "New Notification"
+	}
+
 	// 1. Save to Notification History
 	notif := &domain.Notification{
-		ID:               "gen-uuid", // Use UUID generator
-		UserID:           "user-uuid",
+		ID:               uuid.NewString(),
+		UserID:           userID,
+		Title:            title,
+		Body:             body,
+		IsRead:           false,
 		NotificationType: domain.TypeEmail,
 		Provider:         domain.ProviderSendGrid,
 		Recipient:        "multiple",
