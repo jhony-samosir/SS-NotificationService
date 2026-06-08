@@ -9,7 +9,6 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
-	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/messaging"
 )
 
 type NotificationUsecase struct {
@@ -69,7 +68,7 @@ func (u *NotificationUsecase) ProcessEventWithTx(tx *gorm.DB, messageID string, 
 
 	// 2. Publish to Outbox (notification.sent or notification.failed)
 	outboxPayload, _ := json.Marshal(notif)
-	outboxEvent := &messaging.OutboxEventModel{
+	outboxEvent := &domain.OutboxEventModel{
 		EventType: "notification." + string(status),
 		Payload:   outboxPayload,
 		Status:    "pending",

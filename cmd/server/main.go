@@ -8,6 +8,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
+	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/messaging"
 	"github.com/jhony-samosir/SS-NotificationService/internal/infrastructure/provider"
 	"github.com/jhony-samosir/SS-NotificationService/internal/usecase"
@@ -26,8 +27,7 @@ func main() {
 	}
 
 	if db != nil {
-		// AutoMigrate models
-		db.AutoMigrate(&messaging.InboxEventModel{}, &messaging.OutboxEventModel{})
+		db.AutoMigrate(&domain.InboxEventModel{}, &domain.OutboxEventModel{})
 	}
 
 	// 2. Initialize Infrastructure Providers

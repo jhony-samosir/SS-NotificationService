@@ -10,6 +10,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 	"github.com/jhony-samosir/SS-NotificationService/internal/usecase"
 )
 
@@ -115,7 +116,7 @@ func (c *InboxConsumer) processMessage(ctx context.Context, msg amqp.Delivery) {
 
 	err := c.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		// Idempotency check with ON CONFLICT DO NOTHING
-		inboxEvent := &InboxEventModel{
+		inboxEvent := &domain.InboxEventModel{
 			MessageID: messageID,
 			EventType: eventType,
 			Payload:   msg.Body,

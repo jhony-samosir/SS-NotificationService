@@ -7,6 +7,8 @@ import (
 
 	amqp "github.com/rabbitmq/amqp091-go"
 	"gorm.io/gorm"
+
+	"github.com/jhony-samosir/SS-NotificationService/internal/domain"
 )
 
 type OutboxWorker struct {
@@ -74,7 +76,7 @@ func (w *OutboxWorker) connectAndWork(ctx context.Context) error {
 }
 
 func (w *OutboxWorker) pollAndPublish(ctx context.Context) {
-	var events []OutboxEventModel
+	var events []domain.OutboxEventModel
 	// Fetch pending events
 	if err := w.db.WithContext(ctx).Where("status = ?", "pending").Limit(50).Find(&events).Error; err != nil {
 		slog.Error("Failed to fetch outbox events", "error", err)
